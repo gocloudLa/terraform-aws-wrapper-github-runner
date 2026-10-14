@@ -1,21 +1,18 @@
 # Complete Example 🚀
 
-This example demonstrates the configuration of a GitLab Runner using Terraform, including enabling the runner, specifying instance type, enabling schedule, and filtering AMIs. It also includes commented-out sections for network settings and roles & policies settings.
+This example demonstrates how to configure self-hosted, auto-scaling GitHub Actions runners using the wrapper. It shows a fixed (always-on) runner and includes commented-out sections for an ephemeral runner and the cross-account Shared Runner / Assumed Role features.
 
 ## 🔧 What's Included
 
 ### Analysis of Terraform Configuration
 
 #### Main Purpose
-The main purpose is to configure a GitLab Runner with specific parameters and settings.
+The main purpose is to configure GitHub Runners through the `github_runner_parameters` map, each with its own GitHub App, labels, instance types and scaling behavior.
 
 #### Key Features Demonstrated
-- **Enable Gitlab Runner**: The runner is enabled with the parameter set to true.
-- **Instance Type**: The instance type is set to 't3.medium'.
-- **Enable Schedule**: Scheduling for the runner is enabled.
-- **Ami Filter**: The AMI filter is set to include Amazon Linux 2023 AMIs.
-- **Network Settings**: Network settings are commented out, indicating default values.
-- **Roles & Policies Settings**: Roles and policies settings are commented out, indicating optional configurations.
+- **Fixed Runner**: The `fixed` entry keeps 1 instance always running via `idle_config` with `enable_ephemeral_runners = false`.
+- **Ephemeral Runner**: A commented-out `ephemeral` entry shows one instance per job with `enable_ephemeral_runners = true` and no idle config.
+- **Shared Runner**: A commented-out `shared` entry grants the central runner `assumable_roles_arn` to assume roles in external accounts.
 
 ## 🚀 Quick Start
 
