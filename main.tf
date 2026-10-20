@@ -8,6 +8,9 @@ module "github_runner" {
   subnet_ids = tolist(data.aws_subnets.this[each.key].ids)
 
   prefix = try(each.value.prefix, var.github_runner_defaults.prefix, local.common_name)
+  runner_ec2_tags = try(each.value.runner_ec2_tags, var.github_runner_defaults.runner_ec2_tags, {
+    Name = "${local.common_name}-github-runner"
+  })
 
   webhook_lambda_zip                = local.webhook_lambda_zip
   runners_lambda_zip                = local.runners_lambda_zip
@@ -27,7 +30,7 @@ module "github_runner" {
   enable_ssm_on_runners                   = try(each.value.enable_ssm_on_runners, var.github_runner_defaults.enable_ssm_on_runners, true)
   delay_webhook_event                     = try(each.value.delay_webhook_event, var.github_runner_defaults.delay_webhook_event, 30)
   scale_down_schedule_expression          = try(each.value.scale_down_schedule_expression, var.github_runner_defaults.scale_down_schedule_expression, "cron(*/5 * * * ? *)")
-  job_retry                               = try(each.value.job_retry, var.github_runner_defaults.job_retry, null)
+  job_retry                               = try(each.value.job_retry, var.github_runner_defaults.job_retry, { enable = false })
   enable_userdata                         = try(each.value.enable_userdata, var.github_runner_defaults.enable_userdata, true)
   ami                                     = try(each.value.ami, var.github_runner_defaults.ami, null)
 
@@ -35,7 +38,7 @@ module "github_runner" {
 }
 
 /*----------------------------------------------------------------------*/
-/* Shared Runner (cuenta central)                                       */
+/* Shared Runner                                                        */
 /*----------------------------------------------------------------------*/
 resource "aws_iam_policy" "assume_external_roles" {
   for_each = {
@@ -54,12 +57,12 @@ resource "aws_iam_policy" "assume_external_roles" {
 resource "aws_iam_role_policy_attachment" "assume_external_roles" {
   for_each = aws_iam_policy.assume_external_roles
 
-  role       = module.github_runner[each.key].runners.role_runner.name
+  role       = module.github_runner[each.key].runners.role_runner[0].name
   policy_arn = each.value.arn
 }
 
 /*----------------------------------------------------------------------*/
-/* Assumed Role (cuentas externas)                                      */
+/* Assumed Role                                                         */
 /*----------------------------------------------------------------------*/
 resource "aws_iam_role" "assumable" {
   for_each = {
