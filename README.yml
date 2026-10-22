@@ -1,0 +1,227 @@
+module_name: Terraform GitHub Runner Module
+module_description: The Terraform Wrapper for GitHub Runner simplifies the configuration of self-hosted, auto-scaling GitHub Actions runners in the AWS cloud.
+module_badges:
+  - url: "https://github.com/gocloudLa/terraform-aws-wrapper-github-runner/releases/latest"
+    image: "https://img.shields.io/github/v/release/gocloudLa/terraform-aws-wrapper-github-runner.svg?style=for-the-badge"
+    alt: "Latest Release"
+  - url: ""
+    image: "https://img.shields.io/github/last-commit/gocloudLa/terraform-aws-wrapper-github-runner.svg?style=for-the-badge"
+    alt: "Last Commit"
+  - url: "https://registry.terraform.io/modules/gocloudLa/wrapper-github-runner/aws"
+    image: "https://img.shields.io/badge/Terraform-Registry-7B42BC?style=for-the-badge&logo=terraform&logoColor=white"
+    alt: "Terraform Registry"
+quick_start: |
+  ```hcl
+  github_runner_parameters = {
+      "fixed" = {
+        aws_region = "us-east-1"
+
+        github_app = {
+          id             = "123456"
+          key_base64     = var.github_app_key_base64
+          webhook_secret = var.github_app_webhook_secret
+        }
+
+        runner_extra_labels   = ["fixed"]
+        instance_types        = ["t3.small", "t3.medium"]
+        runners_maximum_count = 20
+
+        # Keep 1 instance always running
+        enable_ephemeral_runners = false
+        idle_config = [{
+          cron      = "* * * * ? *"
+          timeZone  = "America/Argentina/Buenos_Aires"
+          idleCount = 1
+        }]
+
+        # Network Settings
+        # vpc_name    = "dmc-prd"           # Default: "${local.common_name}"
+        # subnet_name = "dmc-prd-private*"  # Default: "${local.common_name}-private*"
+      }
+    }
+  ```
+first_steps: |
+  The GitHub App and this module depend on each other: the module needs values from
+  the App (id, private key), and the App needs the webhook URL that the module
+  outputs. For that reason the setup is done in three stages: create the App, run
+  Terraform, then finish configuring the App's webhook.
+
+  ### 1. Create the GitHub App (part 1)
+
+  Create a new App under your organization (organization-level runners are the
+  common case):
+
+  1. In GitHub, go to **Settings → Developer settings → GitHub Apps → New GitHub App**.
+  2. Set a name and a homepage URL (any URL works, it is only required by the form).
+  3. **Disable the webhook for now** — it gets configured in step 3, once Terraform
+     produced the endpoint.
+  4. Set the permissions:
+     - **Repository → Actions**: Read-only (detect queued jobs)
+     - **Repository → Checks**: Read-only (receive build events)
+     - **Repository → Metadata**: Read-only (required)
+     - For **repo-level** runners: **Repository → Administration**: Read & write
+     - For **organization-level** runners: **Organization → Self-hosted runners**: Read & write
+  5. Create the App and, on its **General** page, note the **App ID**.
+  6. Go to the **Credentials** tab → **Key pairs** sub-tab and click
+     **New Key**. GitHub downloads a `.pem` file automatically.
+
+  ### 2. Deploy the module (part 2)
+
+  Encode the private key to base64 and pass it, together with the App ID and a
+  webhook secret you choose, through `github_app`:
+
+  ```bash
+  base64 -w0 app.private-key.pem
+  ```
+
+  > **About `webhook_secret`**: it is a value you make up yourself — any random,
+  > non-empty string works (there is no format required by GitHub or AWS). It must
+  > not be empty, since the module stores it in SSM Parameter Store, which rejects
+  > empty values. The exact same value must be set later in the GitHub App webhook
+  > (step 3). Generate a strong one, e.g. `openssl rand -hex 20`, and use a
+  > different secret per runner.
+
+  ```hcl
+  github_runner_parameters = {
+    "fixed" = {
+      github_app = {
+        id             = "123456"                 # App ID from step 1
+        key_base64     = var.github_app_key_base64 # output of: base64 app.private-key.pem
+        webhook_secret = var.github_app_webhook_secret
+      }
+      # ...rest of the runner config
+    }
+  }
+  ```
+
+  Then run:
+
+  ```bash
+  terraform init
+  terraform apply
+  ```
+
+  The apply creates the webhook endpoint (API Gateway) that you need to link back to
+  the App. The wrapper exposes it as an output, so you can read it straight from the
+  terminal after `apply` (the `webhook_secret` is the value you chose yourself, so it
+  is not exposed as an output):
+
+  ```bash
+  # Webhook URL(s), one per runner key
+  terraform output webhook_endpoint
+  ```
+
+  ### 3. Finish the GitHub App webhook (part 3)
+
+  Go back to the GitHub App and:
+
+  1. **Enable the webhook**.
+  2. Set the **webhook URL** to the value from `terraform output webhook_endpoint`
+     (for the corresponding runner key).
+  3. Set the **webhook secret** to the same value you passed in `github_app.webhook_secret`.
+  4. Under **Permissions & Events → Subscribe to events**, check **Workflow Job**.
+  5. Under **Install App**, install it in your organization, on all or selected
+     repositories.
+
+  After this, queued jobs trigger the webhook, which scales runners up and down.
+  You can verify the flow from the App's **Advanced** page (delivered events) and the
+  CloudWatch logs of the `webhook` and `scale-up` lambdas.
+
+features:
+  - icon: 🏃‍♀️
+    title: Shared Runner
+    short_description: Central GitHub Runner that can assume roles in external accounts
+    long_description: |
+      Configure a central GitHub Runner that can assume roles in other AWS accounts. A policy with `sts:AssumeRole` towards the ARNs listed in `assumable_roles_arn` is attached to the runner instance role, so jobs running on the central account can deploy to external accounts.
+    examples:
+      - title: Configuration Code
+        code: |
+          ```hcl
+          github_runner_parameters = {
+              "shared" = {
+                aws_region = "us-east-1"
+
+                github_app = {
+                  id             = "123456"
+                  key_base64     = var.github_app_key_base64
+                  webhook_secret = var.github_app_webhook_secret
+                }
+
+                enable_ephemeral_runners = false
+                runner_extra_labels      = ["shared"]
+                instance_types           = ["t3.small", "t3.medium"]
+                runners_maximum_count    = 20
+
+                # Roles the central runner is allowed to assume in external accounts
+                assumable_roles_arn = [
+                  "arn:aws:iam::111111111111:role/dmc-dev-github-runner-assumable",
+                  "arn:aws:iam::222222222222:role/dmc-stg-github-runner-assumable"
+                ]
+                # assumable_roles_arn = ["*"] # Allow runner to assume any role (insecure)
+              }
+            }
+          ```
+  - icon: 🔑
+    title: Assumed Role
+    short_description: Generates IAM roles for external GitHub Runner access
+    long_description: |
+      It does not provision infrastructure to run the GitHub Runner. It only creates, in an external account, the IAM role that the central runner can assume. Set `assumable_role_enable = true` and this entry will skip the runner stack and create just the role, trusting `assumable_role_trusted_role_arn`.
+    examples:
+      - title: Configuration Code
+        code: |
+          ```hcl
+          github_runner_parameters = {
+              "from-central" = {
+                # When enabled, this entry does NOT create a runner (only the role)
+                assumable_role_enable = true
+
+                # ARN of the central runner instance role (account A)
+                assumable_role_trusted_role_arn = "arn:aws:iam::999999999999:role/dmc-sha-github-runner"
+                # Insecure option, trust an entire external account
+                # assumable_role_trusted_role_arn = "arn:aws:iam::999999999999:root"
+
+                # Optional session duration (seconds)
+                # assumable_role_max_session_duration = 3600
+
+                # Optional permissions policy for the assumable role
+                # assumable_role_policy_json = data.aws_iam_policy_document.this.json
+              }
+            }
+          ```
+  - icon: 📦
+    title: Vendored Lambdas
+    short_description: Lambda release artifacts bundled with the wrapper
+    long_description: |
+      The Lambda `.zip` artifacts of the upstream module (`v7.11.0`) are vendored under `modules/lambda/` and referenced via `path.module`. Consumers do not need to build the lambdas locally nor download anything at plan time, keeping runs reproducible and offline-friendly.
+    examples: []
+important_notes: |
+  - **GitHub App required**: each runner entry needs a `github_app` block with `id`, `key_base64` (base64-encoded `.pem`) and `webhook_secret`. The same `webhook_secret` must be configured in the GitHub App webhook settings.
+  - **Networking by tag**: `vpc_name` and `subnet_name` are resolved by `tag:Name`. By default they fall back to `local.common_name` / `"${local.common_name}-private*"`.
+  - **Upstream version**: the module is pinned to `v7.11.0`. To upgrade, replace both the `?ref=` of the source and the vendored zips under `modules/lambda/`.
+input_table: |
+  | aws_region | AWS region where the runner is deployed | `string` | current provider region | no |
+  | prefix | Prefix used for naming the runner resources | `string` | `"${local.common_name}"` | no |
+  | vpc_name | `tag:Name` used to look up the VPC | `string` | `"${local.common_name}"` | no |
+  | subnet_name | `tag:Name` used to look up the subnets | `string` | `"${local.common_name}-private*"` | no |
+  | github_app | GitHub App parameters (`id`, `key_base64`, `webhook_secret`) | `object` | `null` | yes |
+  | create_service_linked_role_spot | Let the module create the spot service-linked role | `bool` | `null` | no |
+  | enable_ephemeral_runners | Create one instance per job and destroy it on completion | `bool` | `false` | no |
+  | enable_job_queued_check | Only start a runner when the job is queued | `bool` | `null` | no |
+  | idle_config | Schedule to keep a number of idle (always-on) runners | `list(object)` | `[]` | no |
+  | runner_extra_labels | Additional labels assigned to the runners | `list(string)` | `[]` | no |
+  | instance_types | EC2 instance types used for the runners | `list(string)` | `["t3.small", "t3.medium"]` | no |
+  | runners_maximum_count | Maximum number of runner instances | `number` | `null` | no |
+  | enable_organization_runners | Register runners at the organization level instead of repo level | `bool` | `false` | no |
+  | scale_up_reserved_concurrent_executions | Reserved concurrency for the scale-up lambda (`-1` to disable the limit) | `number` | `1` | no |
+  | enable_ssm_on_runners | Enable SSM access on the runner instances | `bool` | `true` | no |
+  | delay_webhook_event | Delay (in seconds) applied to webhook events | `number` | `30` | no |
+  | scale_down_schedule_expression | Cron expression that triggers the scale-down lambda | `string` | `"cron(*/5 * * * ? *)"` | no |
+  | job_retry | Job retry configuration (`{ enable = bool }`) | `object` | `null` | no |
+  | enable_userdata | Enable user data on the runner instances | `bool` | `true` | no |
+  | ami | AMI filter/owners for a pre-built runner image | `object` | `null` | no |
+  | tags | Map of tags merged with `common_tags` | `map(string)` | `{}` | no |
+  | assumable_roles_arn | List of external role ARNs the central runner may assume (Shared Runner) | `list(string)` | `null` | no |
+  | assumable_role_enable | Only create the assumable role in this account, skipping the runner (Assumed Role) | `bool` | `false` | no |
+  | assumable_role_trusted_role_arn | ARN trusted to assume the role created in this account | `string` | `null` | no |
+  | assumable_role_max_session_duration | Max session duration (seconds) for the assumable role | `number` | `3600` | no |
+  | assumable_role_policy_json | Optional permissions policy (JSON) attached to the assumable role | `string` | `null` | no |
