@@ -1,9 +1,11 @@
 module "github_runner" {
-  source = "git::https://github.com/github-aws-runners/terraform-aws-github-runner.git?ref=v7.11.0"
+  # LOCAL VALIDATION ONLY: points to the slimmed upstream checkout (branch fix/slim-role-outputs-7x @ v7.11.0).
+  # Before release: set to the gocloudLa fork URL with ref=v7.12.0 (pending fork creation, see Redmine #4521).
+  source = "../terraform-aws-github-runner"
 
   for_each = local.github_runner_instances
 
-  aws_region = try(each.value.aws_region, var.github_runner_defaults.aws_region, data.aws_region.current.name)
+  aws_region = try(each.value.aws_region, var.github_runner_defaults.aws_region, data.aws_region.current.region)
   vpc_id     = data.aws_vpc.this[each.key].id
   subnet_ids = tolist(data.aws_subnets.this[each.key].ids)
 
