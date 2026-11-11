@@ -1,9 +1,9 @@
 module "github_runner" {
-  source = "git::https://github.com/github-aws-runners/terraform-aws-github-runner.git?ref=v7.11.0"
+  source = "github.com/github-aws-runners/terraform-aws-github-runner?ref=v7.11.0"
 
   for_each = local.github_runner_instances
 
-  aws_region = try(each.value.aws_region, var.github_runner_defaults.aws_region, data.aws_region.current.name)
+  aws_region = try(each.value.aws_region, var.github_runner_defaults.aws_region, data.aws_region.current.region)
   vpc_id     = data.aws_vpc.this[each.key].id
   subnet_ids = tolist(data.aws_subnets.this[each.key].ids)
 
