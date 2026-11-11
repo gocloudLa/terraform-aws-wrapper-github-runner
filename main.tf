@@ -1,7 +1,5 @@
 module "github_runner" {
-  # LOCAL VALIDATION ONLY: points to the slimmed upstream checkout (branch fix/slim-role-outputs-7x @ v7.11.0).
-  # Before release: set to the gocloudLa fork URL with ref=v7.12.0 (pending fork creation, see Redmine #4521).
-  source = "../terraform-aws-github-runner"
+  source = "github.com/github-aws-runners/terraform-aws-github-runner?ref=v7.11.0"
 
   for_each = local.github_runner_instances
 
