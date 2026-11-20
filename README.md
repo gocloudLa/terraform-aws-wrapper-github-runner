@@ -20,6 +20,94 @@ The Terraform Wrapper for GitHub Runner simplifies the configuration of self-hos
 
 
 ## 🚀 Quick Start
+The GitHub App and this module depend on each other: the module needs values from
+the App (id, private key), and the App needs the webhook URL that the module
+outputs. For that reason the setup is done in three stages: create the App, run
+Terraform, then finish configuring the App's webhook.
+
+### 1. Create the GitHub App (part 1)
+
+Create a new App under your organization (organization-level runners are the
+common case):
+
+1. In GitHub, go to **Settings → Developer settings → GitHub Apps → New GitHub App**.
+2. Set a name and a homepage URL (any URL works, it is only required by the form).
+3. **Disable the webhook for now** — it gets configured in step 3, once Terraform
+   produced the endpoint.
+4. Set the permissions:
+   - **Repository → Actions**: Read-only (detect queued jobs)
+   - **Repository → Checks**: Read-only (receive build events)
+   - **Repository → Metadata**: Read-only (required)
+   - For **repo-level** runners: **Repository → Administration**: Read & write
+   - For **organization-level** runners: **Organization → Self-hosted runners**: Read & write
+5. Create the App and, on its **General** page, note the **App ID**.
+6. Go to the **Credentials** tab → **Key pairs** sub-tab and click
+   **New Key**. GitHub downloads a `.pem` file automatically.
+
+### 2. Deploy the module (part 2)
+
+Encode the private key to base64 and pass it, together with the App ID and a
+webhook secret you choose, through `github_app`:
+
+```bash
+base64 -w0 app.private-key.pem
+```
+
+> **About `webhook_secret`**: it is a value you make up yourself — any random,
+> non-empty string works (there is no format required by GitHub or AWS). It must
+> not be empty, since the module stores it in SSM Parameter Store, which rejects
+> empty values. The exact same value must be set later in the GitHub App webhook
+> (step 3). Generate a strong one, e.g. `openssl rand -hex 20`, and use a
+> different secret per runner.
+
+```hcl
+github_runner_parameters = {
+  "fixed" = {
+    github_app = {
+      id             = "123456"                 # App ID from step 1
+      key_base64     = var.github_app_key_base64 # output of: base64 app.private-key.pem
+      webhook_secret = var.github_app_webhook_secret
+    }
+    # ...rest of the runner config
+  }
+}
+```
+
+Then run:
+
+```bash
+terraform init
+terraform apply
+```
+
+The apply creates the webhook endpoint (API Gateway) that you need to link back to
+the App. The wrapper exposes it as an output, so you can read it straight from the
+terminal after `apply` (the `webhook_secret` is the value you chose yourself, so it
+is not exposed as an output):
+
+```bash
+# Webhook URL(s), one per runner key
+terraform output webhook_endpoint
+```
+
+### 3. Finish the GitHub App webhook (part 3)
+
+Go back to the GitHub App and:
+
+1. **Enable the webhook**.
+2. Set the **webhook URL** to the value from `terraform output webhook_endpoint`
+   (for the corresponding runner key).
+3. Set the **webhook secret** to the same value you passed in `github_app.webhook_secret`.
+4. Under **Permissions & Events → Subscribe to events**, check **Workflow Job**.
+5. Under **Install App**, install it in your organization, on all or selected
+   repositories.
+
+After this, queued jobs trigger the webhook, which scales runners up and down.
+You can verify the flow from the App's **Advanced** page (delivered events) and the
+CloudWatch logs of the `webhook` and `scale-up` lambdas.
+
+### Example configuration
+
 ```hcl
 github_runner_parameters = {
     "fixed" = {
@@ -120,7 +208,7 @@ github_runner_parameters = {
 
 
 ### Vendored Lambdas
-The Lambda `.zip` artifacts of the upstream module (`v7.11.0`) are vendored under `modules/lambda/` and referenced via `path.module`. Consumers do not need to build the lambdas locally nor download anything at plan time, keeping runs reproducible and offline-friendly.
+The Lambda `.zip` artifacts of the upstream module (`v8.1.1`) are vendored under `modules/lambda/` and referenced via `path.module`. Consumers do not need to build the lambdas locally nor download anything at plan time, keeping runs reproducible and offline-friendly.
 
 
 
@@ -165,7 +253,7 @@ The Lambda `.zip` artifacts of the upstream module (`v7.11.0`) are vendored unde
 ## ⚠️ Important Notes
 - **GitHub App required**: each runner entry needs a `github_app` block with `id`, `key_base64` (base64-encoded `.pem`) and `webhook_secret`. The same `webhook_secret` must be configured in the GitHub App webhook settings.
 - **Networking by tag**: `vpc_name` and `subnet_name` are resolved by `tag:Name`. By default they fall back to `local.common_name` / `"${local.common_name}-private*"`.
-- **Upstream version**: the module is pinned to `v7.11.0`. To upgrade, replace both the `?ref=` of the source and the vendored zips under `modules/lambda/`.
+- **Upstream version**: the module is pinned to `v8.1.1`. To upgrade, replace both the `?ref=` of the source and the vendored zips under `modules/lambda/`.
 
 
 
