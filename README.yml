@@ -192,12 +192,12 @@ features:
     title: Vendored Lambdas
     short_description: Lambda release artifacts bundled with the wrapper
     long_description: |
-      The Lambda `.zip` artifacts of the upstream module (`v7.11.0`) are vendored under `modules/lambda/` and referenced via `path.module`. Consumers do not need to build the lambdas locally nor download anything at plan time, keeping runs reproducible and offline-friendly.
+      The Lambda `.zip` artifacts of the upstream module (`v8.1.1`) are vendored under `modules/lambda/` and referenced via `path.module`. Consumers do not need to build the lambdas locally nor download anything at plan time, keeping runs reproducible and offline-friendly.
     examples: []
 important_notes: |
   - **GitHub App required**: each runner entry needs a `github_app` block with `id`, `key_base64` (base64-encoded `.pem`) and `webhook_secret`. The same `webhook_secret` must be configured in the GitHub App webhook settings.
   - **Networking by tag**: `vpc_name` and `subnet_name` are resolved by `tag:Name`. By default they fall back to `local.common_name` / `"${local.common_name}-private*"`.
-  - **Upstream version**: the module is pinned to `v7.11.0`. To upgrade, replace both the `?ref=` of the source and the vendored zips under `modules/lambda/`.
+  - **Upstream version**: the module is pinned to `v8.1.1`. To upgrade, replace both the `?ref=` of the source and the vendored zips under `modules/lambda/`.
 input_table: |
   | aws_region | AWS region where the runner is deployed | `string` | current provider region | no |
   | prefix | Prefix used for naming the runner resources | `string` | `"${local.common_name}"` | no |

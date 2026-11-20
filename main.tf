@@ -1,5 +1,5 @@
 module "github_runner" {
-  source = "git::https://github.com/github-aws-runners/terraform-aws-github-runner.git?ref=v7.11.0"
+  source = "git::https://github.com/github-aws-runners/terraform-aws-github-runner.git?ref=v8.1.1"
 
   for_each = local.github_runner_instances
 
